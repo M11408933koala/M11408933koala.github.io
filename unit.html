@@ -294,6 +294,22 @@
             margin-bottom: 0.5rem;
         }
 
+        .demo-link {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            font-size: 0.85rem;
+            color: #d6a92c;
+            font-weight: 600;
+            text-decoration: none;
+            word-break: break-all;
+        }
+
+        .demo-link:hover {
+            color: #2a4a72;
+            text-decoration: underline;
+        }
+
         /* Badge 樣式 */
         .badge {
             padding: 0.4rem 1rem;
@@ -661,6 +677,25 @@
             });
         }
 
+        // 讀取 URL{N}_{i}.txt（若存在）
+        // 第一行：取代圖片下方原本顯示的單元名稱
+        // 第二行（若有）：補充的 demo URL，會顯示在下一行並可點選
+        function loadImageNote(unitNum, index) {
+            return fetch(`URL/URL${unitNum}_${index}.txt`)
+                .then(response => {
+                    if (!response.ok) throw new Error("No note file.");
+                    return response.text();
+                })
+                .then(text => {
+                    const lines = text.split('\n').map(l => l.trim()).filter(l => l.length > 0);
+                    const note = {};
+                    if (lines[0]) note.caption = lines[0];
+                    if (lines[1]) note.demoUrl = lines[1];
+                    return note;
+                })
+                .catch(() => null);
+        }
+
         // 依序偵測 pic/unit{N}_1.jpg, _2.jpg... 直到找不到為止
         // 若完全沒有對應圖片，則改用 pic/no.jpg 顯示一張預設圖
         async function generateImages() {
@@ -676,8 +711,11 @@
 
                 images.push({
                     src: src,
+                    index: i,
                     title: `${unit.name} - 圖片 ${i}`,
-                    description: `單元 #${currentUnit}: ${unit.name} 作業圖片 ${i}`
+                    description: `單元 #${currentUnit}: ${unit.name} 作業圖片 ${i}`,
+                    caption: unit.name,
+                    demoUrl: null
                 });
                 i++;
             }
@@ -686,10 +724,23 @@
             if (images.length === 0) {
                 images.push({
                     src: 'pic/no.jpg',
+                    index: null,
                     title: `${unit.name} - 尚無圖片`,
-                    description: `單元 #${currentUnit}: ${unit.name} 目前尚未上傳作業圖片`
+                    description: `單元 #${currentUnit}: ${unit.name} 目前尚未上傳作業圖片`,
+                    caption: unit.name,
+                    demoUrl: null
                 });
             }
+
+            // 針對每張實際存在的圖片，檢查是否有對應的 URL{N}_{i}.txt 說明檔
+            await Promise.all(images.map(async (image) => {
+                if (!image.index) return; // no.jpg 預設圖不檢查
+                const note = await loadImageNote(currentUnit, image.index);
+                if (note) {
+                    if (note.caption) image.caption = note.caption;
+                    if (note.demoUrl) image.demoUrl = note.demoUrl;
+                }
+            }));
         }
 
         // Render gallery based on current unit
@@ -698,15 +749,21 @@
             const unit = unitInfo[currentUnit];
 
             galleryGrid.innerHTML = images.map((image, index) => {
-                const title = image.title;
                 const fileName = image.src.split('/').pop().replace(/\.[^.]+$/, '');
+                const captionText = image.caption || unit.name;
+                const demoLinkHtml = image.demoUrl
+                    ? `<a href="${image.demoUrl}" target="_blank" rel="noopener" class="demo-link" onclick="event.stopPropagation()">
+                           <i class="fas fa-external-link-alt"></i> ${image.demoUrl}
+                       </a>`
+                    : '';
 
                 return `
                     <div class="gallery-item" data-bs-toggle="modal" data-bs-target="#imageModal" onclick="showImage(${index})">
                         <img src="${image.src}" alt="單元 ${currentUnit} - 圖片 ${index + 1}">
                         <div class="gallery-overlay">
                             <h5>${fileName}</h5>
-                            <p>${unit.name}</p>
+                            <p>${captionText}</p>
+                            ${demoLinkHtml}
                         </div>
                     </div>
                 `;
@@ -772,34 +829,6 @@
         });
     </script>
 
-    <script>
-        document.addEventListener('DOMContentLoaded', function() {
-            fetch(`YoutubeLink/unit${currentUnit}.txt`)
-                .then(response => {
-                    if (!response.ok) throw new Error("No YouTube link found.");
-                    return response.text();
-                })
-                .then(text => {
-                    const firstLine = text.trim().split('\n')[0];
-                    if (firstLine.includes("youtube") || firstLine.includes("youtu.be")) {
-                        const videoId = firstLine.includes("youtu.be")
-                            ? firstLine.split("youtu.be/")[1]
-                            : firstLine.split("v=")[1].split("&")[0];
-                        const iframeHTML = `
-                            <div class="container mt-5 mb-5">
-                                <div class="ratio ratio-16x9">
-                                    <iframe src="https://www.youtube.com/embed/${videoId}" 
-                                            title="YouTube video" allowfullscreen></iframe>
-                                </div>
-                            </div>`;
-                        document.body.insertAdjacentHTML("beforeend", iframeHTML);
-                    }
-                })
-                .catch(err => {
-                    console.log("No YouTube video for this unit.");
-                });
-        });
-    </script>
 
 </body>
 </html>
